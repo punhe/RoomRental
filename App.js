@@ -4,9 +4,12 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { View, ActivityIndicator } from 'react-native';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './config/firebase';
+
 import Login from './screens/Login';
 import Signup from './screens/Signup';
 import Home from './screens/Home';
+import RoomDetail from './screens/RoomDetail';
+import colors from './colors';
 
 const Stack = createStackNavigator();
 const AuthenticatedUserContext = createContext({});
@@ -22,8 +25,16 @@ const AuthenticatedUserProvider = ({ children }) => {
 
 function HomeStack() {
     return (
-        <Stack.Navigator>
+        <Stack.Navigator defaultScreenOptions={Home}>
             <Stack.Screen name='Home' component={Home} />
+            <Stack.Screen 
+                name='RoomDetail' 
+                component={RoomDetail}
+                options={{
+                    title: 'Room Details',
+                    headerTintColor: colors.primary
+                }}
+            />
         </Stack.Navigator>
     );
 }

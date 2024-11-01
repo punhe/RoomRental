@@ -5,29 +5,29 @@ import {
     Text, 
     Image, 
     StyleSheet, 
-    ScrollView,
+    FlatList,
     Dimensions 
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { FontAwesome, AntDesign, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { FontAwesome, AntDesign, Ionicons } from '@expo/vector-icons';
 import { signOut } from 'firebase/auth';
-import { auth } from '../config/firebase';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { auth, database } from '../config/firebase';
+import MapView, { Marker } from 'react-native-maps';
 import colors from '../colors';
 
 const { width } = Dimensions.get('window');
-const catImageUrl = "https://i.guim.co.uk/img/media/26392d05302e02f7bf4eb143bb84c8097d09144b/446_167_3683_2210/master/3683.jpg?width=1200&height=1200&quality=85&auto=format&fit=crop&s=49ed3252c0b2ffb49cf8b508892e452d";
 
 const Home = () => {
     const navigation = useNavigation();
-    const [userData, setUserData] = useState({
-        name: auth?.currentUser?.displayName || "User",
-        email: auth?.currentUser?.email,
-        joinDate: "Member since " + new Date().toLocaleDateString(),
-        stats: {
-            posts: 23,
-            followers: 1234,
-            following: 567
-        }
+    const [rooms, setRooms] = useState([]);
+    const [bookedRooms, setBookedRooms] = useState([]);
+    const [isBookingExpanded, setIsBookingExpanded] = useState(false);
+    const [selectedRegion, setSelectedRegion] = useState({
+        latitude: 10.762622,
+        longitude: 106.660172,
+        latitudeDelta: 0.0922,
+        longitudeDelta: 0.0421,
     });
 
     const onSignOut = () => {
@@ -44,100 +44,130 @@ const Home = () => {
                     <TouchableOpacity onPress={onSignOut} style={styles.logoutButton}>
                         <AntDesign name="logout" size={24} color={colors.gray} />
                     </TouchableOpacity>
-                    <Image
-                        source={{ uri: catImageUrl }}
-                        style={styles.headerProfileImage}
-                    />
                 </View>
             ),
-            headerTitle: "",
+            headerTitle: "Room Finder",
         });
     }, [navigation]);
 
-    const StatBox = ({ icon, title, value }) => (
-        <View style={styles.statBox}>
-            {icon}
-            <Text style={styles.statValue}>{value}</Text>
-            <Text style={styles.statTitle}>{title}</Text>
-        </View>
-    );
+    useEffect(() => {
+        const fetchRooms = async () => {
+            try {
+                const roomsCollection = collection(database, 'rooms');
+                const roomSnapshot = await getDocs(roomsCollection);
+                const roomList = roomSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+                setRooms(roomList);
+            } catch (error) {
+                console.error("Error fetching rooms: ", error);
+            }
+        };
+        fetchRooms();
+    }, []);
 
-    const MenuItem = ({ icon, title, subtitle, color }) => (
-        <TouchableOpacity style={styles.menuItem}>
-            <View style={[styles.menuIcon, { backgroundColor: color }]}>
-                {icon}
+    useEffect(() => {
+        const fetchBookedRooms = async () => {
+            if (auth.currentUser) {
+                try {
+                    const bookingsRef = collection(database, 'bookings');
+                    const q = query(bookingsRef, where("userId", "==", auth.currentUser.uid));
+                    const bookingsSnapshot = await getDocs(q);
+                    const bookedList = bookingsSnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+                    setBookedRooms(bookedList);
+                } catch (error) {
+                    console.error("Error fetching booked rooms: ", error);
+                }
+            }
+        };
+        fetchBookedRooms();
+    }, []);
+
+    const RoomCard = ({ room }) => (
+        <TouchableOpacity 
+            style={styles.roomCard}
+            onPress={() => navigation.navigate('RoomDetail', { room })}
+        >
+            <Image
+                source={{ uri: room.imageUrl }}
+                style={styles.roomImage}
+            />
+            <View style={styles.roomInfo}>
+                <Text style={styles.roomName}>{room.name}</Text>
+                <Text style={styles.roomLocation}>
+                    <Ionicons name="location" size={16} color={colors.primary} />
+                    {room.location}
+                </Text>
+                <Text style={styles.roomPrice}>${room.pricePerNight}/night</Text>
             </View>
-            <View style={styles.menuText}>
-                <Text style={styles.menuTitle}>{title}</Text>
-                <Text style={styles.menuSubtitle}>{subtitle}</Text>
-            </View>
-            <AntDesign name="right" size={20} color={colors.gray} />
         </TouchableOpacity>
     );
 
+    const toggleBookingSection = () => {
+        setIsBookingExpanded(!isBookingExpanded);
+    };
+
+    const renderBookingSection = () => (
+        <View style={styles.bookingSection}>
+            <TouchableOpacity onPress={toggleBookingSection} style={styles.viewAllButton}>
+                <Text style={styles.sectionTitle}>Your Bookings</Text>
+                <AntDesign name={isBookingExpanded ? "up" : "down"} size={16} color={colors.primary} />
+            </TouchableOpacity>
+            {isBookingExpanded && (
+                <FlatList
+                    data={bookedRooms}
+                    renderItem={({ item }) => (
+                        <View style={styles.bookedRoomCard}>
+                            <Text style={styles.bookedRoomTitle}>{item.roomName}</Text>
+                            <Text style={styles.bookedRoomPrice}>${item.roomPrice}/night</Text>
+                            <Text style={styles.bookedRoomDate}>Booked On: {new Date(item.bookedOn.seconds * 1000).toDateString()}</Text>
+                        </View>
+                    )}
+                    keyExtractor={item => item.id}
+                    scrollEnabled={false} // Prevent nested scrolling
+                />
+            )}
+        </View>
+    );
+
     return (
-        <ScrollView style={styles.container}>
-            {/* Profile Section */}
-            <View style={styles.profileSection}>
-                <Image
-                    source={{ uri: catImageUrl }}
-                    style={styles.profileImage}
-                />
-                <Text style={styles.userName}>{userData.name}</Text>
-                <Text style={styles.userEmail}>{userData.email}</Text>
-                <Text style={styles.joinDate}>{userData.joinDate}</Text>
-
-                <View style={styles.statsContainer}>
-                    <StatBox 
-                        icon={<Ionicons name="document-text" size={24} color={colors.primary} />}
-                        title="Posts"
-                        value={userData.stats.posts}
-                    />
-                    <StatBox 
-                        icon={<Ionicons name="people" size={24} color={colors.primary} />}
-                        title="Followers"
-                        value={userData.stats.followers}
-                    />
-                    <StatBox 
-                        icon={<Ionicons name="person-add" size={24} color={colors.primary} />}
-                        title="Following"
-                        value={userData.stats.following}
-                    />
-                </View>
-            </View>
-
-            {/* Menu Section */}
-            <View style={styles.menuSection}>
-                <MenuItem 
-                    icon={<MaterialCommunityIcons name="account-edit" size={24} color="white" />}
-                    title="Edit Profile"
-                    subtitle="Update your personal information"
-                    color="#FF6B6B"
-                />
-                <MenuItem 
-                    icon={<Ionicons name="settings-sharp" size={24} color="white" />}
-                    title="Settings"
-                    subtitle="App preferences and privacy"
-                    color="#4ECDC4"
-                />
-                <MenuItem 
-                    icon={<MaterialCommunityIcons name="shield-check" size={24} color="white" />}
-                    title="Privacy"
-                    subtitle="Manage your privacy settings"
-                    color="#45B7D1"
-                />
-                <MenuItem 
-                    icon={<MaterialCommunityIcons name="help-circle" size={24} color="white" />}
-                    title="Help & Support"
-                    subtitle="Get help and contact us"
-                    color="#96CEB4"
-                />
-            </View>
-        </ScrollView>
+        <FlatList
+            data={rooms}
+            ListHeaderComponent={() => (
+                <>
+                    <View style={styles.mapContainer}>
+                        <MapView
+                            style={styles.map}
+                            region={selectedRegion}
+                        >
+                            {rooms.map((room) => (
+                                <Marker
+                                    key={room.id}
+                                    coordinate={{
+                                        latitude: room.latitude,
+                                        longitude: room.longitude
+                                    }}
+                                    title={room.name}
+                                    description={`$${room.pricePerNight}/night`}
+                                    onPress={() => navigation.navigate('RoomDetail', { room })}
+                                />
+                            ))}
+                        </MapView>
+                    </View>
+                    {renderBookingSection()}
+                    <Text style={styles.sectionTitle}>Available Rooms</Text>
+                </>
+            )}
+            renderItem={({ item }) => <RoomCard room={item} />}
+            keyExtractor={item => item.id}
+            ListFooterComponent={<View style={{ height: 20 }} />} // Optional footer space
+        />
     );
 };
-
-export default Home;
 
 const styles = StyleSheet.create({
     container: {
@@ -152,107 +182,92 @@ const styles = StyleSheet.create({
     logoutButton: {
         marginRight: 15,
     },
-    headerProfileImage: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-    },
-    profileSection: {
-        alignItems: 'center',
-        padding: 20,
+    mapContainer: {
+        height: 300,
+        margin: 15,
+        borderRadius: 15,
+        overflow: 'hidden',
         backgroundColor: 'white',
-        borderBottomLeftRadius: 30,
-        borderBottomRightRadius: 30,
+    },
+    map: {
+        flex: 1,
+    },
+    sectionTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        padding: 15,
+        color: '#333',
+    },
+    bookingSection: {
+        paddingHorizontal: 15,
+    },
+    viewAllButton: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 10,
+    },
+    bookedRoomCard: {
+        backgroundColor: 'white',
+        borderRadius: 10,
+        padding: 15,
+        marginVertical: 5,
         shadowColor: "#000",
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.2,
+        shadowRadius: 1.41,
+        elevation: 2,
+    },
+    bookedRoomTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#333',
+    },
+    bookedRoomPrice: {
+        fontSize: 14,
+        color: colors.primary,
+        marginVertical: 5,
+    },
+    bookedRoomDate: {
+        fontSize: 12,
+        color: colors.gray,
+    },
+    roomCard: {
+        backgroundColor: 'white',
+        borderRadius: 15,
+        marginBottom: 15,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 3.84,
         elevation: 5,
     },
-    profileImage: {
-        width: 100,
-        height: 100,
-        borderRadius: 50,
-        marginBottom: 15,
-    },
-    userName: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: '#333',
-        marginBottom: 5,
-    },
-    userEmail: {
-        fontSize: 16,
-        color: colors.gray,
-        marginBottom: 5,
-    },
-    joinDate: {
-        fontSize: 14,
-        color: colors.gray,
-        marginBottom: 20,
-    },
-    statsContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-around',
+    roomImage: {
         width: '100%',
-        paddingHorizontal: 20,
+        height: 200,
+        borderTopLeftRadius: 15,
+        borderTopRightRadius: 15,
     },
-    statBox: {
-        alignItems: 'center',
-        minWidth: 80,
+    roomInfo: {
+        padding: 15,
     },
-    statValue: {
+    roomName: {
         fontSize: 18,
         fontWeight: 'bold',
+        marginBottom: 5,
         color: '#333',
-        marginTop: 5,
     },
-    statTitle: {
-        fontSize: 12,
+    roomLocation: {
+        fontSize: 14,
         color: colors.gray,
-        marginTop: 2,
+        marginBottom: 5,
     },
-    menuSection: {
-        padding: 20,
-    },
-    menuItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'white',
-        padding: 15,
-        borderRadius: 15,
-        marginBottom: 15,
-        shadowColor: "#000",
-        shadowOffset: {
-            width: 0,
-            height: 1,
-        },
-        shadowOpacity: 0.1,
-        shadowRadius: 2.22,
-        elevation: 3,
-    },
-    menuIcon: {
-        width: 40,
-        height: 40,
-        borderRadius: 10,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 15,
-    },
-    menuText: {
-        flex: 1,
-    },
-    menuTitle: {
+    roomPrice: {
         fontSize: 16,
-        fontWeight: '600',
-        color: '#333',
-        marginBottom: 2,
-    },
-    menuSubtitle: {
-        fontSize: 12,
-        color: colors.gray,
+        fontWeight: 'bold',
+        color: colors.primary,
+        marginBottom: 5,
     },
 });
+
+export default Home;
